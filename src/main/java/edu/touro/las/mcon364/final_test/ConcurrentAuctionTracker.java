@@ -30,9 +30,9 @@ public class ConcurrentAuctionTracker {
 
     //TODO - Initialize thread-safe sorted Set implementation to store bids in descending order by amount.
     //Uncomment line below and choose the appropriate concurrent collection to store BidEntry objects sorted by amount.
-    //private final Set<BidEntry> bids;
+    private final Set<BidEntry> bids = new ConcurrentSkipListSet<>();
     //TODO - Initialize a thread-safe counter to track total bid submissions and call it totalBids.
-
+    private final AtomicInteger totalBids = new AtomicInteger(0);
 
     /**
      * Adds a bid entry to the tracker thread-safely and increments the counter.
@@ -41,6 +41,8 @@ public class ConcurrentAuctionTracker {
      */
     public void submitBid(BidEntry entry) {
         //TODO - implement this method
+        bids.add(entry);
+        totalBids.incrementAndGet();
     }
 
     /**
@@ -51,7 +53,7 @@ public class ConcurrentAuctionTracker {
      */
     public List<BidEntry> getTopN(int n) {
         //TODO - implement this method
-        return null;
+        return List.copyOf(bids.stream().limit(n).collect(Collectors.toList()));//already sorted.
     }
 
     /**
@@ -59,7 +61,7 @@ public class ConcurrentAuctionTracker {
      */
     public int getTotalBids() {
         //TODO - implement this method
-        return 0;
+        return totalBids.get();
     }
 
     /**
@@ -71,9 +73,22 @@ public class ConcurrentAuctionTracker {
      * @param bidders   list of bidder identifiers
      * @param bidsEach  number of random bids each bidder submits
      */
-    public void runSimulation(List<String> bidders, int bidsEach)
-            throws InterruptedException {
-        //TODO - implement this method
+    public void runSimulation(List<String> bidders, int bidsEach){
+        try {
+            ExecutorService pool = Executors.newFixedThreadPool(bidders.size());
+            for (String bid: bidders) {
+                pool.submit(() -> {
+                    Random random = new Random();
+                    for (int i = 0; i < bidsEach; i++) {
+                        submitBid(new BidEntry(bid, random.nextInt(), random.nextLong()));
+                    }
+                });
+            } pool.shutdown();
+            pool.awaitTermination(1, TimeUnit.SECONDS);
+        }
+        catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
     }
 }
 

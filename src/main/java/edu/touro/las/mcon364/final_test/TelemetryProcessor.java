@@ -1,6 +1,9 @@
 package edu.touro.las.mcon364.final_test;
 
 import java.util.DoubleSummaryStatistics;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * TelemetryProcessor – concurrent sensor-data pipeline
@@ -32,6 +35,15 @@ import java.util.DoubleSummaryStatistics;
 public class TelemetryProcessor {
 
     // ── declare whatever fields you need ─────────────────────────────────────
+    private final BlockingQueue<TelemetryEvent> queue = new LinkedBlockingQueue<>();
+    private final AtomicInteger counter = new AtomicInteger(0);
+
+    private ExecutorService pool;
+    private final AtomicReference<DoubleSummaryStatistics> stats = new AtomicReference<>(new DoubleSummaryStatistics());
+
+
+
+
 
     // ── public API ────────────────────────────────────────────────────────────
 
@@ -45,6 +57,10 @@ public class TelemetryProcessor {
      */
     public void submit(TelemetryEvent event) {
         //TODO - implement this method
+        if (event == null) {
+            throw new  IllegalArgumentException("event cannot be null");
+        }
+        queue.add(event);
     }
 
     /**
@@ -53,15 +69,59 @@ public class TelemetryProcessor {
      * @throws IllegalArgumentException if workerCount ≤ 0
      */
     public void start(int workerCount) {
+        if (workerCount <= 0) {
+            throw new IllegalArgumentException("workerCount must be greater than 0");
+        }
+
         //TODO - implement this method
+        pool = Executors.newFixedThreadPool(workerCount);
+        for (int i = 0; i < workerCount; i++) {
+            pool.submit(() -> {
+                try {
+                      while (!queue.isEmpty()) {
+                        TelemetryEvent event = queue.poll(100, TimeUnit.MILLISECONDS);
+                        if (event != null) process(event);
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            });
+        }
     }
+
+    public void process(TelemetryEvent event) {
+        counter.incrementAndGet();
+        stats.updateAndGet( s -> {
+            DoubleSummaryStatistics copy = new DoubleSummaryStatistics();
+            copy.combine(s);
+            copy.accept(event.metric());
+            return copy;
+        });
+    }
+
+
+
+
 
     /**
      * Stop processing events.
      * @throws InterruptedException if the calling thread is interrupted while waiting
      */
     public void stop() throws InterruptedException {
+        if (pool == null) {
+            return;
+        }
         //TODO - implement this method
+        //pool.shutdown(); not working idk why
+
+        pool.shutdown();
+        pool.awaitTermination(10, TimeUnit.SECONDS);
+        while (!queue.isEmpty()) {
+            TelemetryEvent event = queue.poll();
+            if (event != null) {
+                process(event);
+            }
+        }
     }
 
     /**
@@ -69,7 +129,7 @@ public class TelemetryProcessor {
      */
     public int getTotalProcessed() {
         //TODO - implement this method
-        return 0;
+        return counter.get();
     }
 
     /**
@@ -82,6 +142,8 @@ public class TelemetryProcessor {
      */
     public DoubleSummaryStatistics getStats() {
         //TODO - implement this method
-        return null;
+        DoubleSummaryStatistics copy = new DoubleSummaryStatistics();
+        copy.combine(stats.get());
+        return copy;
     }
 }
